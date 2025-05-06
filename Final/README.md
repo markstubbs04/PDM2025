@@ -4,6 +4,7 @@ Bug Hunt EXTREME is the final project in my Programming Digital Media class. It 
 
 # Rules:
 
+- For keyboard controls, the arrow keys move Samus, the space bar shoots her arm cannon, and the enter key will start the game from the start screen. For arduino controls, after connecting the arduino you can use a joystick and a button to interact with the game. The joystick moves Samus and the button will fire her arm cannon and start the game from the start screen.
 - You start the game with 10 energy, and receive another 10 energy each round until the last round where you receive 99 to face the horde.
 - If the bugs are able to reach Samus' height, then you lose the game.
 - If you run out of energy, the spider's will rush you and once they reach Samus you lose the game. If you have only 1 energy left and there is 1 enemy left, firing he last laser will cause the enemy to rush you, but it can still be killed and you can still move on to the next round.
