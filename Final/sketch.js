@@ -1,3 +1,5 @@
+//https://youtube.com/shorts/um3FvwZ0UXw
+
 let GameStates = Object.freeze({
   START: "start",
   PLAY: "play",
@@ -17,9 +19,11 @@ let lasers = [];
 let score = 0;
 let bugs;
 let startscreen;
+let winScreen;
 let gameFont;
 let energy = 10;
 let flag = true;
+let laserFrequencyTimer = 0;
 
 let newEnemyTimer = 30;
 let enemySideSpawn = 0;
@@ -56,16 +60,37 @@ let screenTextTimer = 0;
 const enemyType = [[0,0],[9,4],[9,0],[6,0],[3,4],[3,0],[6,4],[0,4]];
 let enemyIndex = 0;
 
+let port; let reader;
+let connectButton;
+let buttonStatus = "";
+let isConnected = false;
+const ledPin = '13';
+
+let serial;
+let buttonValueDisplay;
+let joystickXValueDisplay;
+let canvas;
+let serialData = "";
+let prevButtonValue=0;
+let joystickXValue=0;
+
+let dataQueue = []; // Queue to hold incoming serial data
+let isProcessing = false; // Flag to track if we're already processing data
 
 function preload(){
   bugs = loadImage("bugs.png");
   samus = loadImage("Custom Edited - Metroid Customs - Samus (1).png");
   startscreen = loadImage("startscreen.png");
   samus_stand = loadImage("samus_stand_still.png");
+  // winScreen = loadImage("winScreen.png");
 }
 
 function setup() {
   createCanvas(400, 600);
+
+  port = createSerial();
+  connectButton = createButton("Connect to Arduino");
+  connectButton.mousePressed(connectToSerial);
 
   Tone.start();
 
@@ -110,13 +135,30 @@ function setup() {
 
 function draw() {
   textFont(gameFont);
+
+  if (port.opened()) {
+    try {
+      const dataString = port.readUntil('\n');
+      if (dataString) {
+        serialEvent(dataString.trim()); // Pass data to your parser
+      }
+    } catch (err) {
+      console.error("Serial read error:", err);
+    }
+  }
+
   switch(gameState){
     case GameStates.START:
       image(startscreen,0,0,400,600,0,0,1024,1024);
+      fill(255);
+      text("Press Button to Start",80,100);
       break;
     case GameStates.PLAY:
       background(0);
       textSize(15);
+      if(laserFrequencyTimer<8){
+        laserFrequencyTimer++;
+      }
       if(enemyFlag){
         enemyFlagCounter++;
         if(enemyFlagCounter % newEnemyTimer === 0){
@@ -145,10 +187,28 @@ function draw() {
       
       player.update();
       player.show();
-      if (keyIsDown(LEFT_ARROW)) {
+      // MOVEMENT FOR NON ARDUINO GAMEPLAY
+      // if (keyIsDown(LEFT_ARROW)) {
+      //   player.move(-5);
+      //   player.changeAnimation("left");
+      // } else if (keyIsDown(RIGHT_ARROW)) {
+      //   player.move(5);
+      //   player.changeAnimation("right");
+      // }else{
+      //   switch(player.returnCurrentAnimation()){
+      //     case "right":
+      //       player.changeAnimation("right_stand");
+      //       break;
+      //     case "left":
+      //       player.changeAnimation("left_stand");
+      //       break;
+      //   }
+      // }
+      // console.log(joystickXValue);
+      if (joystickXValue<450) {
         player.move(-5);
         player.changeAnimation("left");
-      } else if (keyIsDown(RIGHT_ARROW)) {
+      } else if (joystickXValue>560) {
         player.move(5);
         player.changeAnimation("right");
       }else{
@@ -186,7 +246,7 @@ function draw() {
 
         //text(screenText[enemyIndex],150,300);
       }
-      console.log(difficultyMultiplyer);
+      // console.log(difficultyMultiplyer);
 
 
       //CHEATING FOR TESTING
@@ -214,6 +274,10 @@ function draw() {
               enemies.splice(j, 1);
               lasers.splice(i, 1);
               score++;
+              if(isConnected){
+                console.log("LED")
+                port.write('H,' + ledPin + '\n');
+              }
               break;
             }
           }
@@ -261,6 +325,7 @@ function draw() {
       // }
       break;
     case GameStates.WIN:
+      // image(winScreen,0,0,400,600,0,0,1024,1024);
       text("WINNER WINNER",140,250)
       stopGalagaLoop();
       break;
@@ -268,26 +333,26 @@ function draw() {
   
 }
 
-function keyPressed() {
-  if(keyIsDown(ENTER)){
-    if(gameState === GameStates.START){
-      gameState = GameStates.PLAY;
-      if (!isPlaying) {
-        startGalagaLoop();
-      }
-    }
-  }
-  if (key === ' ') {
-    if(energy>0){
-      lasers.push(new Laser(player.x, height - player.r*3));
-      soundEffects.player("laser").start();
-      energy--;
-    }
-    else{
+// function keyPressed() {
+//   if(keyIsDown(ENTER)){
+//     if(gameState === GameStates.START){
+//       gameState = GameStates.PLAY;
+      // if (!isPlaying) {
+      //   startGalagaLoop();
+      // }
+//     }
+//   }
+  // if (key === ' ') {
+  //   if(energy>0){
+  //     lasers.push(new Laser(player.x, height - player.r*3));
+  //     soundEffects.player("laser").start();
+  //     energy--;
+  //   }
+  //   else{
 
-    }
-  }
-}
+  //   }
+  // }
+// }
 
 // Player Class
 class Player {
@@ -364,7 +429,7 @@ class Enemy {
         this.currentAnimation = 'right';
       }
     }
-    if(this.y>560){
+    if(this.y>540){
       gameState = GameStates.GAMEOVER;
     }
   }
@@ -428,6 +493,17 @@ class Laser {
     return (d < this.r + enemy.r);
   }
 }
+
+
+function shootLaser(){
+  if(energy>0 && laserFrequencyTimer==8){
+    lasers.push(new Laser(player.x, height - player.r*3));
+    soundEffects.player("laser").start();
+    energy--;
+    laserFrequencyTimer = 0;
+  }
+}
+
 
 class SpriteAnimation{
   constructor(spritesheet,startU,startV, duration){
@@ -499,14 +575,14 @@ class SpriteAnimation{
 //   console.log("Loop stopped");
 // }
 
-function mousePressed() {
-  if (!isPlaying) {
-    startGalagaLoop();
-  } else {
-    stopGalagaLoop();
-  }
-  isPlaying = !isPlaying;
-}
+// function mousePressed() {
+//   if (!isPlaying) {
+//     startGalagaLoop();
+//   } else {
+//     stopGalagaLoop();
+//   }
+//   isPlaying = !isPlaying;
+// }
 
 let lastPlayedTime = 0; // added to help with timing
 
@@ -533,4 +609,110 @@ function startGalagaLoop() {
 function stopGalagaLoop() {
   clearInterval(loopInterval);
   console.log("Galaga loop stopped");
+}
+
+function serialEvent(dataString) {
+  // Add incoming data to the queue
+  dataQueue.push(dataString);
+  
+  // Start processing the queue if we're not already processing data
+  if (!isProcessing && dataQueue.length > 0) {
+    processDataQueue();
+  }
+}
+
+function processDataQueue() {
+  // If there's no data left, stop processing
+  if (dataQueue.length === 0) {
+    isProcessing = false;
+    return;
+  }
+
+  // Mark as processing
+  isProcessing = true;
+
+  // Get the first piece of data in the queue
+  const dataString = dataQueue.shift();
+
+  // Process the data in smaller chunks
+  setTimeout(() => {
+    processHeavyTask(dataString, () => {
+      // After processing, check the queue again and process the next item
+      processDataQueue();
+    });
+  }, 0); // Yield control to the main thread
+}
+
+function processHeavyTask(dataString, callback) {
+  // console.log("Received:", dataString);
+  const values = dataString.split(',');
+
+  if (values.length === 2) {
+    try {
+      const buttonMatch = values[0].match(/Button: (\d+)/);
+      const joystickXMatch = values[1].match(/ Joystick X: (\d+)/);
+      if (buttonMatch && joystickXMatch) {
+        let buttonValue = parseInt(buttonMatch[1]);
+        // console.log(buttonValue)
+        joystickXValue= parseInt(joystickXMatch[1]);
+        // console.log(xValue);
+
+
+        if(prevButtonValue==0){
+          if(buttonValue==1){
+            shootLaser();
+            if(gameState===GameStates.START){
+              gameState=GameStates.PLAY;
+              if (!isPlaying) {
+                startGalagaLoop();
+              }
+            }
+          }
+        }else{
+          if(buttonValue==0){
+            prevButtonValue = 0;
+          }
+        }
+
+
+      }
+    } catch (error) {
+      console.error("Error parsing serial data:", error);
+    }
+  }
+
+  // Callback after the processing is done
+  callback();
+}
+
+function updateDisplays(buttonValue, joystickXValue) {
+  // Update only if necessary, avoiding frequent DOM manipulations
+  buttonValueDisplay.innerText = buttonValue;
+  joystickXValueDisplay.innerText = joystickXValue;
+}
+
+async function waitUntilPortOpens(timeout = 5000) {
+  const start = Date.now();
+  while (!port.opened()) {
+    if (Date.now() - start > timeout) {
+      throw new Error("Timed out waiting for port to open");
+    }
+    await new Promise(r => setTimeout(r, 50));
+  }
+}
+
+async function connectToSerial() {
+  try {
+    console.log("Requesting to open serial port...");
+    await port.open('Arduino', 9600); // Open the serial port (waits for permission)
+
+    // Wait until the port is fully opened
+    await waitUntilPortOpens();
+
+    console.log("✅ Serial port successfully opened!");
+    isConnected = true;
+    // readSerialLoop();
+  } catch (err) {
+    console.error("❌ Error during serial connection:", err);
+  }
 }
